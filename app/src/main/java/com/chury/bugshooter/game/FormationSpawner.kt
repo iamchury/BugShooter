@@ -7,6 +7,7 @@ import kotlin.random.Random
 class FormationSpawner {
     fun createFormation(
         screenSize: Vector2,
+        stage: Int,
         groupId: Int,
         nextEnemyId: () -> Int,
     ): Pair<EnemyFormation, List<MosquitoEnemy>> {
@@ -20,13 +21,17 @@ class FormationSpawner {
             end = GameConfig.FormationSpeedMaxPerScreen,
         )
         val speed = screenSize.y * speedRatio
+        val tunedSpeed = when (pattern) {
+            FormationPattern.ZIGZAG -> speed * 1.18f
+            else -> speed
+        }
         val formation = EnemyFormation(
             groupId = groupId,
             pattern = pattern,
             enemyCount = enemyCount,
-            speed = speed,
+            speed = tunedSpeed,
         )
-        return formation to createEnemies(screenSize, formation, nextEnemyId)
+        return formation to createEnemies(screenSize, stage, formation, nextEnemyId)
     }
 
     fun createSingleMosquito(
@@ -37,6 +42,7 @@ class FormationSpawner {
         val radius = mosquitoRadius(screenSize)
         return MosquitoEnemy(
             id = id,
+            enemyKind = EnemyKind.MOSQUITO,
             groupId = groupId,
             formationPattern = FormationPattern.STRAIGHT_DOWN,
             formationIndex = 0,
@@ -52,6 +58,7 @@ class FormationSpawner {
 
     private fun createEnemies(
         screenSize: Vector2,
+        stage: Int,
         formation: EnemyFormation,
         nextEnemyId: () -> Int,
     ): List<MosquitoEnemy> {
@@ -71,6 +78,7 @@ class FormationSpawner {
             )
             MosquitoEnemy(
                 id = nextEnemyId(),
+                enemyKind = enemyKindFor(stage, index, formation.enemyCount),
                 groupId = formation.groupId,
                 formationPattern = formation.pattern,
                 formationIndex = index,
@@ -99,6 +107,14 @@ class FormationSpawner {
 
     private fun mosquitoRadius(screenSize: Vector2): Float {
         return screenSize.x.coerceAtMost(screenSize.y) * GameConfig.MosquitoRadiusRatio
+    }
+
+    private fun enemyKindFor(stage: Int, index: Int, count: Int): EnemyKind {
+        return when (stage) {
+            2 -> EnemyKind.FLY
+            3 -> if (index < count / 2) EnemyKind.MOSQUITO else EnemyKind.FLY
+            else -> EnemyKind.MOSQUITO
+        }
     }
 
     private fun Float.lerp(start: Float, end: Float): Float {

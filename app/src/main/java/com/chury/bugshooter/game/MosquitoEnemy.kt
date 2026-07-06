@@ -8,6 +8,7 @@ import kotlin.math.sin
 
 data class MosquitoEnemy(
     override val id: Int,
+    override val enemyKind: EnemyKind = EnemyKind.MOSQUITO,
     override val groupId: Int,
     override val formationPattern: FormationPattern,
     override val formationIndex: Int,
@@ -62,7 +63,7 @@ data class MosquitoEnemy(
             )
 
             FormationPattern.S_CURVE -> Vector2(
-                x = centerBase.x + minSize * GameConfig.ZigzagAmplitudeRatio * sin(elapsed * 2.2f),
+                x = centerBase.x + minSize * GameConfig.ZigzagAmplitudeRatio * 1.35f * sin(elapsed * 2.2f),
                 y = centerBase.y + down,
             )
 

@@ -28,8 +28,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chury.bugshooter.engine.Vector2
 import com.chury.bugshooter.game.BugShooterGame
+import com.chury.bugshooter.game.BossMosquito
+import com.chury.bugshooter.game.EnemyBullet
 import com.chury.bugshooter.game.Enemy
+import com.chury.bugshooter.game.EnemyKind
 import com.chury.bugshooter.game.Explosion
+import com.chury.bugshooter.game.PowerUp
+import com.chury.bugshooter.game.PowerUpType
 import kotlinx.coroutines.isActive
 
 @Composable
@@ -80,15 +85,27 @@ fun GameScreen(
             state.enemies.forEach { enemy ->
                 drawMosquito(enemy)
             }
+            state.boss?.let { boss ->
+                drawBossMosquito(boss)
+            }
+            state.enemyBullets.forEach { bullet ->
+                drawEnemyBullet(bullet)
+            }
+            state.powerUps.forEach { powerUp ->
+                drawPowerUp(powerUp)
+            }
             state.explosions.forEach { explosion ->
                 drawExplosion(explosion)
+            }
+            state.boss?.let { boss ->
+                drawBossHpBar(boss)
             }
         }
 
         Text(
-            text = "Score ${state.score}   Lives ${state.lives}   Hits ${state.hits}   Misses ${state.misses}",
+            text = "Stage ${state.currentStage}   Score ${state.score}   Lives ${state.lives}   Hits ${state.hits}   Combo ${state.combo} x${comboMultiplier(state.combo)}",
             color = Color.White,
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -96,13 +113,22 @@ fun GameScreen(
         )
 
         Text(
-            text = "Pattern: ${state.currentPatternName}",
+            text = "Pattern: ${state.currentPatternName}   ${activePowerUpText(state.doubleShotSeconds, state.rapidFireSeconds, state.shieldCharges)}",
             color = Color.White.copy(alpha = 0.82f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Normal,
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(start = 16.dp, top = 42.dp),
+        )
+
+        Text(
+            text = "Misses ${state.misses}",
+            color = Color.White.copy(alpha = 0.72f),
+            fontSize = 11.sp,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 16.dp, top = 62.dp),
         )
 
         Button(
@@ -130,6 +156,28 @@ fun GameScreen(
             )
         }
     }
+}
+
+private fun comboMultiplier(combo: Int): Int {
+    return when {
+        combo >= 50 -> 5
+        combo >= 25 -> 3
+        combo >= 10 -> 2
+        else -> 1
+    }
+}
+
+private fun activePowerUpText(
+    doubleShotSeconds: Float,
+    rapidFireSeconds: Float,
+    shieldCharges: Int,
+): String {
+    val active = buildList {
+        if (doubleShotSeconds > 0f) add("DOUBLE ${doubleShotSeconds.toInt()}s")
+        if (rapidFireSeconds > 0f) add("RAPID ${rapidFireSeconds.toInt()}s")
+        if (shieldCharges > 0) add("SHIELD $shieldCharges")
+    }
+    return if (active.isEmpty()) "Power: NONE" else "Power: ${active.joinToString("  ")}"
 }
 
 private fun DrawScope.drawSpaceBackground() {
@@ -239,6 +287,10 @@ private fun DrawScope.drawMosquito(enemy: Enemy) {
     // Later, this is the swap point for drawing R.drawable.mosquito instead of a shape.
     val center = Offset(enemy.position.x, enemy.position.y)
     val r = enemy.radius
+    if (enemy.enemyKind == EnemyKind.FLY) {
+        drawFly(enemy)
+        return
+    }
 
     drawOval(
         color = Color.White.copy(alpha = 0.62f),
@@ -319,6 +371,132 @@ private fun DrawScope.drawMosquito(enemy: Enemy) {
         end = Offset(center.x, center.y + r * 0.75f),
         strokeWidth = r * 0.08f,
         cap = StrokeCap.Round,
+    )
+}
+
+private fun DrawScope.drawFly(enemy: Enemy) {
+    val center = Offset(enemy.position.x, enemy.position.y)
+    val r = enemy.radius
+    drawOval(
+        color = Color.White.copy(alpha = 0.5f),
+        topLeft = Offset(center.x - r * 0.85f, center.y - r * 0.75f),
+        size = Size(r * 0.85f, r * 0.7f),
+    )
+    drawOval(
+        color = Color.White.copy(alpha = 0.5f),
+        topLeft = Offset(center.x + r * 0.02f, center.y - r * 0.75f),
+        size = Size(r * 0.85f, r * 0.7f),
+    )
+    drawOval(
+        color = Color(0xFF263238),
+        topLeft = Offset(center.x - r * 0.42f, center.y - r * 0.45f),
+        size = Size(r * 0.84f, r * 1.05f),
+    )
+    drawCircle(
+        color = Color(0xFF37474F),
+        radius = r * 0.34f,
+        center = Offset(center.x, center.y - r * 0.48f),
+    )
+    drawCircle(
+        color = Color(0xFF76FF03),
+        radius = r * 0.13f,
+        center = Offset(center.x - r * 0.13f, center.y - r * 0.52f),
+    )
+    drawCircle(
+        color = Color(0xFF76FF03),
+        radius = r * 0.13f,
+        center = Offset(center.x + r * 0.13f, center.y - r * 0.52f),
+    )
+    repeat(3) { legIndex ->
+        val y = center.y - r * 0.05f + legIndex * r * 0.24f
+        drawLine(
+            color = Color(0xFF90A4AE),
+            start = Offset(center.x - r * 0.25f, y),
+            end = Offset(center.x - r * 0.78f, y + r * 0.12f),
+            strokeWidth = r * 0.07f,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = Color(0xFF90A4AE),
+            start = Offset(center.x + r * 0.25f, y),
+            end = Offset(center.x + r * 0.78f, y + r * 0.12f),
+            strokeWidth = r * 0.07f,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+private fun DrawScope.drawBossMosquito(boss: BossMosquito) {
+    val proxy = object : Enemy {
+        override val id = boss.id
+        override val enemyKind = boss.enemyKind
+        override val groupId = -1
+        override val formationPattern = com.chury.bugshooter.game.FormationPattern.CIRCLE_LEFT
+        override val formationIndex = 0
+        override val elapsedSeconds = boss.elapsedSeconds
+        override val basePosition = boss.basePosition
+        override val position = boss.position
+        override val radius = boss.radius
+        override val speed = 0f
+        override fun update(deltaSeconds: Float): Enemy = this
+    }
+    drawMosquito(proxy)
+    drawCircle(
+        color = Color(0xFFFFD54F).copy(alpha = 0.25f),
+        radius = boss.radius * 1.3f,
+        center = Offset(boss.position.x, boss.position.y),
+        style = Stroke(width = boss.radius * 0.12f),
+    )
+}
+
+private fun DrawScope.drawBossHpBar(boss: BossMosquito) {
+    val barWidth = size.width * 0.62f
+    val barHeight = 8f
+    val left = (size.width - barWidth) / 2f
+    val top = 82f
+    val progress = boss.hp.toFloat() / boss.maxHp.toFloat()
+    drawRect(
+        color = Color.White.copy(alpha = 0.22f),
+        topLeft = Offset(left, top),
+        size = Size(barWidth, barHeight),
+    )
+    drawRect(
+        color = Color(0xFFE53935),
+        topLeft = Offset(left, top),
+        size = Size(barWidth * progress, barHeight),
+    )
+}
+
+private fun DrawScope.drawEnemyBullet(bullet: EnemyBullet) {
+    drawCircle(
+        color = Color(0xFFFF7043),
+        radius = bullet.radius,
+        center = Offset(bullet.position.x, bullet.position.y),
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = 0.45f),
+        radius = bullet.radius * 0.45f,
+        center = Offset(bullet.position.x, bullet.position.y),
+    )
+}
+
+private fun DrawScope.drawPowerUp(powerUp: PowerUp) {
+    val color = when (powerUp.type) {
+        PowerUpType.DOUBLE_SHOT -> Color(0xFF42A5F5)
+        PowerUpType.RAPID_FIRE -> Color(0xFFFFCA28)
+        PowerUpType.SHIELD -> Color(0xFF66BB6A)
+        PowerUpType.HEAL -> Color(0xFFEC407A)
+        PowerUpType.BOMB -> Color(0xFFAB47BC)
+    }
+    drawCircle(
+        color = color,
+        radius = powerUp.radius,
+        center = Offset(powerUp.position.x, powerUp.position.y),
+    )
+    drawCircle(
+        color = Color.White.copy(alpha = 0.7f),
+        radius = powerUp.radius * 0.45f,
+        center = Offset(powerUp.position.x, powerUp.position.y),
     )
 }
 
