@@ -22,6 +22,7 @@ data class GameState(
     val doubleShotSeconds: Float = 0f,
     val rapidFireSeconds: Float = 0f,
     val shieldCharges: Int = 0,
+    val isTouching: Boolean = false,
     val fireCooldownSeconds: Float = 0f,
     val spawnTimerSeconds: Float = 0f,
     val enemyFireTimerSeconds: Float = 0f,

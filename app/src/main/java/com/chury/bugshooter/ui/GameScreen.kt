@@ -2,7 +2,8 @@ package com.chury.bugshooter.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -60,9 +61,23 @@ fun GameScreen(
             .background(Color(0xFF101820))
             .onSizeChanged { game.setScreenSize(Vector2(it.width.toFloat(), it.height.toFloat())) }
             .pointerInput(game) {
-                detectDragGestures { change, dragAmount ->
-                    change.consume()
-                    game.movePlayerBy(dragAmount.x)
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    down.consume()
+                    game.startTouch(Vector2(down.position.x, down.position.y))
+
+                    var pressed: Boolean
+                    do {
+                        val event = awaitPointerEvent()
+                        val activeChange = event.changes.lastOrNull { it.pressed }
+                        pressed = event.changes.any { it.pressed }
+                        if (activeChange != null) {
+                            event.changes.forEach { it.consume() }
+                            game.moveTouch(Vector2(activeChange.position.x, activeChange.position.y))
+                        }
+                    } while (pressed)
+
+                    game.endTouch()
                 }
             },
     ) {
@@ -103,7 +118,7 @@ fun GameScreen(
         }
 
         Text(
-            text = "Stage ${state.currentStage}   Score ${state.score}   Lives ${state.lives}   Hits ${state.hits}   Combo ${state.combo} x${comboMultiplier(state.combo)}",
+            text = "Stage ${state.currentStage}   Score ${state.score}   Hits ${state.hits}   Combo ${state.combo} x${comboMultiplier(state.combo)}",
             color = Color.White,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
@@ -132,18 +147,12 @@ fun GameScreen(
         )
 
         Button(
-            onClick = {
-                if (state.isGameOver) {
-                    game.reset()
-                } else {
-                    game.fireBullet()
-                }
-            },
+            onClick = game::reset,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(20.dp),
         ) {
-            Text(if (state.isGameOver) "Restart" else "Fire")
+            Text("Restart")
         }
 
         if (state.isGameOver) {

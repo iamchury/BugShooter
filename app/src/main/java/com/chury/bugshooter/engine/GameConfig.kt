@@ -5,6 +5,8 @@ object GameConfig {
     const val PlayerWidthRatio = 0.14f
     const val PlayerHeightRatio = 0.07f
     const val PlayerCenterYRatio = 0.86f
+    const val PlayerMinYRatio = 0.12f
+    const val PLAYER_HIT_SCORE_PENALTY = 100
     const val BulletRadiusRatio = 0.012f
     const val BulletSpeedPerScreen = 0.9f
     const val MaxPlayerBullets = 36

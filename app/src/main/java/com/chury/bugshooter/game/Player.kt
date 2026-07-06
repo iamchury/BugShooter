@@ -15,4 +15,15 @@ data class Player(
         val nextX = (position.x + deltaX).coerceIn(halfWidth, screenWidth - halfWidth)
         return copy(position = position.copy(x = nextX))
     }
+
+    fun moveTo(target: Vector2, screenSize: Vector2, minY: Float): Player {
+        val halfWidth = size.x / 2f
+        val halfHeight = size.y / 2f
+        return copy(
+            position = Vector2(
+                x = target.x.coerceIn(halfWidth, screenSize.x - halfWidth),
+                y = target.y.coerceIn(minY + halfHeight, screenSize.y - halfHeight),
+            ),
+        )
+    }
 }

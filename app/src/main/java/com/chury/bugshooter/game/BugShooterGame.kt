@@ -34,7 +34,7 @@ class BugShooterGame {
         val playerY = screenSize.y * GameConfig.PlayerCenterYRatio
         val player = state.player
             .copy(size = playerSize, position = state.player.position.copy(y = playerY))
-            .moveHorizontally(deltaX = 0f, screenWidth = screenSize.x)
+            .moveTo(state.player.position.copy(y = playerY), screenSize, playerMinYFor(screenSize))
         state = state.copy(screenSize = screenSize, player = player)
     }
 
@@ -61,6 +61,26 @@ class BugShooterGame {
     fun movePlayerBy(deltaX: Float) {
         if (state.isGameOver || state.screenSize == Vector2.Zero) return
         state = state.copy(player = state.player.moveHorizontally(deltaX, state.screenSize.x))
+    }
+
+    fun startTouch(position: Vector2) {
+        if (state.screenSize == Vector2.Zero) return
+        state = state.copy(
+            isTouching = true,
+            player = state.player.moveTo(position, state.screenSize, playerMinYFor(state.screenSize)),
+        )
+    }
+
+    fun moveTouch(position: Vector2) {
+        if (state.screenSize == Vector2.Zero) return
+        state = state.copy(
+            isTouching = true,
+            player = state.player.moveTo(position, state.screenSize, playerMinYFor(state.screenSize)),
+        )
+    }
+
+    fun endTouch() {
+        state = state.copy(isTouching = false)
     }
 
     fun fireBullet() {
@@ -126,14 +146,19 @@ class BugShooterGame {
             playerHitFlashSeconds = (state.playerHitFlashSeconds - deltaSeconds).coerceAtLeast(0f),
         )
 
+        val afterAutoFire = if (timedState.isTouching) {
+            fireFromState(timedState)
+        } else {
+            timedState
+        }
         val afterBulletHits = resolveBossCollisions(
-            resolveBulletEnemyCollisions(timedState),
+            resolveBulletEnemyCollisions(afterAutoFire),
         )
         val afterPowerUps = resolvePowerUpCollection(afterBulletHits)
         val afterEnemyFire = updateEnemyFire(afterPowerUps)
         val afterPlayerDamage = resolvePlayerDamage(afterEnemyFire)
 
-        val aliveState = afterPlayerDamage.copy(isGameOver = afterPlayerDamage.lives <= 0)
+        val aliveState = afterPlayerDamage.copy(isGameOver = false)
 
         state = if (aliveState.isGameOver) {
             aliveState
@@ -331,8 +356,9 @@ class BugShooterGame {
         val enemyBulletIds = input.enemyBullets
             .filter { Collision.circlesIntersect(input.player, it) }
             .mapTo(mutableSetOf()) { it.id }
+        val bossHit = input.boss?.let { Collision.circlesIntersect(input.player, it) } == true
 
-        if (escapedEnemyIds.isEmpty() && contactEnemyIds.isEmpty() && enemyBulletIds.isEmpty()) return input
+        if (escapedEnemyIds.isEmpty() && contactEnemyIds.isEmpty() && enemyBulletIds.isEmpty() && !bossHit) return input
 
         val stateAfterMisses = input.copy(
             enemies = input.enemies.filterNot { it.id in escapedEnemyIds || it.id in contactEnemyIds },
@@ -340,7 +366,7 @@ class BugShooterGame {
             misses = input.misses + escapedEnemyIds.size,
         )
 
-        val damageEvents = contactEnemyIds.size + enemyBulletIds.size
+        val damageEvents = contactEnemyIds.size + enemyBulletIds.size + if (bossHit) 1 else 0
         if (damageEvents <= 0 || input.playerHitFlashSeconds > 0f) {
             return stateAfterMisses
         }
@@ -352,21 +378,46 @@ class BugShooterGame {
         if (input.shieldCharges > 0) {
             return input.copy(
                 shieldCharges = input.shieldCharges - 1,
+                hits = input.hits + 1,
                 playerHitFlashSeconds = GameConfig.PlayerHitFlashSeconds,
                 combo = 0,
                 comboTimerSeconds = 0f,
             )
         }
 
-        val lives = (input.lives - 1).coerceAtLeast(0)
         return input.copy(
-            lives = lives,
             hits = input.hits + 1,
-            score = (input.score - GameConfig.MosquitoBaseScore).coerceAtLeast(0),
+            score = (input.score - GameConfig.PLAYER_HIT_SCORE_PENALTY).coerceAtLeast(0),
             combo = 0,
             comboTimerSeconds = 0f,
             playerHitFlashSeconds = GameConfig.PlayerHitFlashSeconds,
-            isGameOver = lives <= 0,
+            isGameOver = false,
+        )
+    }
+
+    private fun fireFromState(input: GameState): GameState {
+        if (input.fireCooldownSeconds > 0f || input.screenSize == Vector2.Zero) return input
+        if (input.bullets.size >= GameConfig.MaxPlayerBullets) return input
+
+        val bulletRadius = input.screenSize.x.coerceAtMost(input.screenSize.y) * GameConfig.BulletRadiusRatio
+        val bulletY = input.player.position.y - input.player.size.y / 2f
+        val bulletSpeed = input.screenSize.y * GameConfig.BulletSpeedPerScreen
+        val newBullets = if (input.doubleShotSeconds > 0f) {
+            listOf(
+                Bullet(nextBulletId++, input.player.position.copy(x = input.player.position.x - input.player.size.x * 0.22f, y = bulletY), bulletRadius, bulletSpeed),
+                Bullet(nextBulletId++, input.player.position.copy(x = input.player.position.x + input.player.size.x * 0.22f, y = bulletY), bulletRadius, bulletSpeed),
+            )
+        } else {
+            listOf(Bullet(nextBulletId++, input.player.position.copy(y = bulletY), bulletRadius, bulletSpeed))
+        }
+        val cooldown = if (input.rapidFireSeconds > 0f) {
+            GameConfig.RapidFireCooldownSeconds
+        } else {
+            GameConfig.FireCooldownSeconds
+        }
+        return input.copy(
+            bullets = (input.bullets + newBullets).takeLast(GameConfig.MaxPlayerBullets),
+            fireCooldownSeconds = cooldown,
         )
     }
 
@@ -375,5 +426,9 @@ class BugShooterGame {
             x = screenSize.x * GameConfig.PlayerWidthRatio,
             y = screenSize.y * GameConfig.PlayerHeightRatio,
         )
+    }
+
+    private fun playerMinYFor(screenSize: Vector2): Float {
+        return screenSize.y * GameConfig.PlayerMinYRatio
     }
 }
