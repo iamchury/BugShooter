@@ -2,6 +2,7 @@ package com.chury.bugshooter.engine
 
 import com.chury.bugshooter.game.BugShooterGame
 import com.chury.bugshooter.game.Bullet
+import com.chury.bugshooter.game.FormationPattern
 import com.chury.bugshooter.game.MosquitoEnemy
 
 object DebugHarness {
@@ -26,9 +27,16 @@ object DebugHarness {
         )
         val mosquito = MosquitoEnemy(
             id = 2,
+            groupId = 1,
+            formationPattern = FormationPattern.STRAIGHT_DOWN,
+            formationIndex = 0,
+            formationCount = 1,
+            formationSpacing = 0f,
+            basePosition = Vector2(106f, 100f),
             position = Vector2(106f, 100f),
             radius = 10f,
             speed = 0f,
+            screenSize = Vector2(300f, 600f),
         )
         return Collision.circlesIntersect(bullet, mosquito)
     }

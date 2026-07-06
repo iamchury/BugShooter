@@ -2,34 +2,43 @@ package com.chury.bugshooter.game
 
 import com.chury.bugshooter.engine.GameConfig
 import com.chury.bugshooter.engine.Vector2
-import kotlin.random.Random
 
 class StageManager {
+    private val formationSpawner = FormationSpawner()
+
     fun update(
         state: GameState,
         deltaSeconds: Float,
         nextEnemyId: () -> Int,
+        nextGroupId: () -> Int,
     ): GameState {
-        val nextTimer = state.spawnTimerSeconds + deltaSeconds
-        return if (nextTimer >= GameConfig.MosquitoSpawnIntervalSeconds) {
-            val mosquito = createMosquito(state.screenSize, nextEnemyId())
-            state.copy(
-                enemies = state.enemies + mosquito,
-                spawnTimerSeconds = nextTimer - GameConfig.MosquitoSpawnIntervalSeconds,
-            )
-        } else {
-            state.copy(spawnTimerSeconds = nextTimer)
+        if (state.enemies.isNotEmpty()) {
+            return state.copy(spawnTimerSeconds = 0f)
         }
+
+        val nextTimer = state.spawnTimerSeconds + deltaSeconds
+        val shouldSpawnImmediately = state.currentGroupId == null
+        if (!shouldSpawnImmediately && nextTimer < GameConfig.NextGroupDelaySeconds) {
+            return state.copy(
+                spawnTimerSeconds = nextTimer,
+                currentPatternName = "NEXT_GROUP_WAIT",
+            )
+        }
+
+        val (formation, enemies) = formationSpawner.createFormation(
+            screenSize = state.screenSize,
+            groupId = nextGroupId(),
+            nextEnemyId = nextEnemyId,
+        )
+        return state.copy(
+            enemies = enemies,
+            currentGroupId = formation.groupId,
+            currentPatternName = formation.pattern.name,
+            spawnTimerSeconds = 0f,
+        )
     }
 
     fun createMosquito(screenSize: Vector2, id: Int): MosquitoEnemy {
-        val radius = screenSize.x.coerceAtMost(screenSize.y) * GameConfig.MosquitoRadiusRatio
-        val x = Random.nextFloat() * (screenSize.x - radius * 2f) + radius
-        return MosquitoEnemy(
-            id = id,
-            position = Vector2(x = x, y = -radius),
-            radius = radius,
-            speed = screenSize.y * GameConfig.MosquitoSpeedPerScreen,
-        )
+        return formationSpawner.createSingleMosquito(screenSize, id)
     }
 }

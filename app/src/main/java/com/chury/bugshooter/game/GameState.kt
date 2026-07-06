@@ -12,8 +12,11 @@ data class GameState(
     val score: Int = 0,
     val lives: Int = GameConfig.InitialLives,
     val hits: Int = 0,
+    val misses: Int = 0,
     val fireCooldownSeconds: Float = 0f,
     val spawnTimerSeconds: Float = 0f,
     val playerHitFlashSeconds: Float = 0f,
+    val currentGroupId: Int? = null,
+    val currentPatternName: String = "NONE",
     val isGameOver: Boolean = false,
 )

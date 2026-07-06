@@ -14,6 +14,7 @@ class BugShooterGame {
     private val stageManager = StageManager()
     private var nextBulletId = 1
     private var nextEnemyId = 1
+    private var nextGroupId = 1
     private var nextExplosionId = 1
 
     fun setScreenSize(screenSize: Vector2) {
@@ -38,6 +39,7 @@ class BugShooterGame {
 
         nextBulletId = 1
         nextEnemyId = 1
+        nextGroupId = 1
         nextExplosionId = 1
         val playerSize = playerSizeFor(screenSize)
         state = GameState(
@@ -98,7 +100,12 @@ class BugShooterGame {
         state = if (aliveState.isGameOver) {
             aliveState
         } else {
-            stageManager.update(aliveState, deltaSeconds) { nextEnemyId++ }
+            stageManager.update(
+                state = aliveState,
+                deltaSeconds = deltaSeconds,
+                nextEnemyId = { nextEnemyId++ },
+                nextGroupId = { nextGroupId++ },
+            )
         }
     }
 
@@ -148,15 +155,24 @@ class BugShooterGame {
         if (damagingEnemyIds.isEmpty()) return input
 
         val enemiesAfterDamage = input.enemies.filterNot { it.id in damagingEnemyIds }
-        if (input.playerHitFlashSeconds > 0f) {
-            return input.copy(enemies = enemiesAfterDamage)
+        val stateAfterMisses = input.copy(
+            enemies = enemiesAfterDamage,
+            misses = input.misses + escapedEnemyIds.size,
+        )
+
+        if (contactEnemyIds.isEmpty()) {
+            return stateAfterMisses
         }
 
-        val lives = (input.lives - 1).coerceAtLeast(0)
-        return input.copy(
-            enemies = enemiesAfterDamage,
+        if (input.playerHitFlashSeconds > 0f) {
+            return stateAfterMisses
+        }
+
+        val lives = (stateAfterMisses.lives - 1).coerceAtLeast(0)
+        return stateAfterMisses.copy(
             lives = lives,
-            hits = input.hits + 1,
+            hits = stateAfterMisses.hits + 1,
+            score = (stateAfterMisses.score - 1).coerceAtLeast(0),
             playerHitFlashSeconds = GameConfig.PlayerHitFlashSeconds,
             isGameOver = lives <= 0,
         )
