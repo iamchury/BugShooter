@@ -1,9 +1,10 @@
 package com.chury.bugshooter.game
 
 enum class PowerUpType {
+    SPEED_2,
+    SPEED_4,
     DOUBLE_SHOT,
-    RAPID_FIRE,
-    SHIELD,
-    HEAL,
-    BOMB,
+    TRIPLE_SHOT,
+    SHIELD_1,
+    SHIELD_2,
 }

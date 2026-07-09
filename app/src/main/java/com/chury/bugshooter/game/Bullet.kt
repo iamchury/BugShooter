@@ -8,8 +8,14 @@ data class Bullet(
     override val position: Vector2,
     override val radius: Float,
     val speed: Float,
+    val velocityX: Float = 0f,
 ) : GameObject {
     fun update(deltaSeconds: Float): Bullet {
-        return copy(position = position.copy(y = position.y - speed * deltaSeconds))
+        return copy(
+            position = position.copy(
+                x = position.x + velocityX * deltaSeconds,
+                y = position.y - speed * deltaSeconds,
+            ),
+        )
     }
 }

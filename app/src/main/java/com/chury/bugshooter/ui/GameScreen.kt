@@ -11,6 +11,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -27,6 +28,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chury.bugshooter.engine.GameConfig
 import com.chury.bugshooter.engine.Vector2
 import com.chury.bugshooter.game.BugShooterGame
 import com.chury.bugshooter.game.BossMosquito
@@ -36,7 +38,10 @@ import com.chury.bugshooter.game.EnemyKind
 import com.chury.bugshooter.game.Explosion
 import com.chury.bugshooter.game.PowerUp
 import com.chury.bugshooter.game.PowerUpType
+import com.chury.bugshooter.game.SoundController
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlin.math.sin
 
 @Composable
 fun GameScreen(
@@ -54,6 +59,43 @@ fun GameScreen(
     }
 
     val state = game.state
+    val previousScore = remember { mutableStateOf(state.score) }
+    val previousHits = remember { mutableStateOf(state.hits) }
+    val previousGameOver = remember { mutableStateOf(state.isGameOver) }
+
+    LaunchedEffect(Unit) {
+        var step = 0
+        while (isActive) {
+            if (game.state.isGameOver) {
+                SoundController.stopBackground()
+                delay(300)
+            } else {
+                SoundController.playBackgroundBeat(step++)
+                delay(if (step % 4 == 0) 520 else 360)
+            }
+        }
+    }
+
+    LaunchedEffect(state.score) {
+        if (state.score > previousScore.value) {
+            SoundController.playEnemyHit()
+        }
+        previousScore.value = state.score
+    }
+
+    LaunchedEffect(state.hits) {
+        if (state.hits > previousHits.value && !state.isGameOver) {
+            SoundController.playPlayerDeath()
+        }
+        previousHits.value = state.hits
+    }
+
+    LaunchedEffect(state.isGameOver) {
+        if (state.isGameOver && !previousGameOver.value) {
+            SoundController.playPlayerDeath()
+        }
+        previousGameOver.value = state.isGameOver
+    }
 
     Box(
         modifier = modifier
@@ -89,6 +131,7 @@ fun GameScreen(
                 position = state.player.position,
                 size = state.player.size,
                 isFlashing = playerIsFlashing,
+                shieldCharges = state.shieldCharges,
             )
             state.bullets.forEach { bullet ->
                 drawCircle(
@@ -100,7 +143,7 @@ fun GameScreen(
             state.enemies.forEach { enemy ->
                 drawMosquito(enemy)
             }
-            state.boss?.let { boss ->
+            state.bosses.forEach { boss ->
                 drawBossMosquito(boss)
             }
             state.enemyBullets.forEach { bullet ->
@@ -112,13 +155,11 @@ fun GameScreen(
             state.explosions.forEach { explosion ->
                 drawExplosion(explosion)
             }
-            state.boss?.let { boss ->
-                drawBossHpBar(boss)
-            }
+            drawBossHpBars(state.bosses)
         }
 
         Text(
-            text = "Stage ${state.currentStage}   Score ${state.score}   Hits ${state.hits}   Combo ${state.combo} x${comboMultiplier(state.combo)}",
+            text = "Stage ${state.currentStage}   Level ${state.difficultyLevel}   Life Energy ${state.lives}/${GameConfig.MaxLives}   Score ${state.score}   Hits ${state.hits}   Combo ${state.combo} x${comboMultiplier(state.combo)}",
             color = Color.White,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
@@ -128,7 +169,7 @@ fun GameScreen(
         )
 
         Text(
-            text = "Pattern: ${state.currentPatternName}   ${activePowerUpText(state.doubleShotSeconds, state.rapidFireSeconds, state.shieldCharges)}",
+            text = "Pattern: ${state.currentPatternName}   ${activePowerUpText(state.doubleShotSeconds, state.tripleShotSeconds, state.rapidFireSeconds, state.bulletSpeedMultiplier, state.shieldCharges)}",
             color = Color.White.copy(alpha = 0.82f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Normal,
@@ -138,7 +179,7 @@ fun GameScreen(
         )
 
         Text(
-            text = "Misses ${state.misses}",
+            text = "Misses ${state.misses}   Next +${state.carryOverEnemies}",
             color = Color.White.copy(alpha = 0.72f),
             fontSize = 11.sp,
             modifier = Modifier
@@ -178,15 +219,24 @@ private fun comboMultiplier(combo: Int): Int {
 
 private fun activePowerUpText(
     doubleShotSeconds: Float,
-    rapidFireSeconds: Float,
+    tripleShotSeconds: Float,
+    speedPowerSeconds: Float,
+    bulletSpeedMultiplier: Float,
     shieldCharges: Int,
 ): String {
     val active = buildList {
-        if (doubleShotSeconds > 0f) add("DOUBLE ${doubleShotSeconds.toInt()}s")
-        if (rapidFireSeconds > 0f) add("RAPID ${rapidFireSeconds.toInt()}s")
+        if (bulletSpeedMultiplier >= 1.5f) add("RED SPEED x1.5 ${formatSeconds(speedPowerSeconds)}")
+        else if (bulletSpeedMultiplier >= 1.25f) add("YELLOW SPEED x1.25 ${formatSeconds(speedPowerSeconds)}")
+        if (tripleShotSeconds > 0f) add("PINK TRIPLE ${formatSeconds(tripleShotSeconds)}")
+        else if (doubleShotSeconds > 0f) add("GREEN DOUBLE")
         if (shieldCharges > 0) add("SHIELD $shieldCharges")
     }
     return if (active.isEmpty()) "Power: NONE" else "Power: ${active.joinToString("  ")}"
+}
+
+private fun formatSeconds(seconds: Float): String {
+    val tenths = (seconds.coerceAtLeast(0f) * 10f).toInt()
+    return "${tenths / 10}.${tenths % 10}s"
 }
 
 private fun DrawScope.drawSpaceBackground() {
@@ -207,6 +257,7 @@ private fun DrawScope.drawPlayer(
     position: Vector2,
     size: Vector2,
     isFlashing: Boolean,
+    shieldCharges: Int,
 ) {
     val x = position.x
     val y = position.y
@@ -290,26 +341,64 @@ private fun DrawScope.drawPlayer(
             style = Stroke(width = size.y * 0.18f),
         )
     }
+    if (shieldCharges > 0) {
+        drawCircle(
+            color = if (shieldCharges >= 5) {
+                Color(0xFFAB47BC).copy(alpha = 0.55f)
+            } else {
+                Color(0xFF42A5F5).copy(alpha = 0.55f)
+            },
+            radius = size.x * 0.72f,
+            center = Offset(position.x, position.y),
+            style = Stroke(width = size.y * 0.1f),
+        )
+    }
 }
 
 private fun DrawScope.drawMosquito(enemy: Enemy) {
     // Later, this is the swap point for drawing R.drawable.mosquito instead of a shape.
     val center = Offset(enemy.position.x, enemy.position.y)
     val r = enemy.radius
-    if (enemy.enemyKind == EnemyKind.FLY) {
-        drawFly(enemy)
-        return
+    val flap = wingFlap(enemy.elapsedSeconds, enemy.formationIndex)
+    val wingHeight = r * (0.52f + flap * 0.5f)
+    val wingAlpha = 0.36f + flap * 0.34f
+    when (enemy.enemyKind) {
+        EnemyKind.FLY -> {
+            drawFly(enemy)
+            return
+        }
+        EnemyKind.HONEY_BEE -> {
+            drawBee(enemy, isWasp = false)
+            return
+        }
+        EnemyKind.WASP -> {
+            drawBee(enemy, isWasp = true)
+            return
+        }
+        EnemyKind.WHITE_BUTTERFLY -> {
+            drawButterfly(enemy, isSwallowtail = false)
+            return
+        }
+        EnemyKind.SWALLOWTAIL_BUTTERFLY -> {
+            drawButterfly(enemy, isSwallowtail = true)
+            return
+        }
+        EnemyKind.STAG_BEETLE -> {
+            drawStagBeetle(enemy)
+            return
+        }
+        EnemyKind.MOSQUITO -> Unit
     }
 
     drawOval(
-        color = Color.White.copy(alpha = 0.62f),
-        topLeft = Offset(center.x - r * 0.9f, center.y - r * 0.85f),
-        size = Size(r * 0.85f, r * 0.75f),
+        color = Color.White.copy(alpha = wingAlpha),
+        topLeft = Offset(center.x - r * 1.24f, center.y - r * (0.82f + flap * 0.24f)),
+        size = Size(r * 1.18f, wingHeight),
     )
     drawOval(
-        color = Color.White.copy(alpha = 0.62f),
-        topLeft = Offset(center.x + r * 0.05f, center.y - r * 0.85f),
-        size = Size(r * 0.85f, r * 0.75f),
+        color = Color.White.copy(alpha = wingAlpha),
+        topLeft = Offset(center.x + r * 0.06f, center.y - r * (0.82f + (1f - flap) * 0.24f)),
+        size = Size(r * 1.18f, r * (0.52f + (1f - flap) * 0.5f)),
     )
 
     drawLine(
@@ -386,15 +475,18 @@ private fun DrawScope.drawMosquito(enemy: Enemy) {
 private fun DrawScope.drawFly(enemy: Enemy) {
     val center = Offset(enemy.position.x, enemy.position.y)
     val r = enemy.radius
+    val flap = wingFlap(enemy.elapsedSeconds, enemy.formationIndex)
+    val wingHeight = r * (0.5f + flap * 0.55f)
+    val wingAlpha = 0.3f + flap * 0.42f
     drawOval(
-        color = Color.White.copy(alpha = 0.5f),
-        topLeft = Offset(center.x - r * 0.85f, center.y - r * 0.75f),
-        size = Size(r * 0.85f, r * 0.7f),
+        color = Color.White.copy(alpha = wingAlpha),
+        topLeft = Offset(center.x - r * 1.18f, center.y - r * (0.78f + flap * 0.24f)),
+        size = Size(r * 1.15f, wingHeight),
     )
     drawOval(
-        color = Color.White.copy(alpha = 0.5f),
-        topLeft = Offset(center.x + r * 0.02f, center.y - r * 0.75f),
-        size = Size(r * 0.85f, r * 0.7f),
+        color = Color.White.copy(alpha = wingAlpha),
+        topLeft = Offset(center.x + r * 0.03f, center.y - r * (0.78f + (1f - flap) * 0.24f)),
+        size = Size(r * 1.15f, r * (0.5f + (1f - flap) * 0.55f)),
     )
     drawOval(
         color = Color(0xFF263238),
@@ -435,7 +527,133 @@ private fun DrawScope.drawFly(enemy: Enemy) {
     }
 }
 
+private fun DrawScope.drawBee(enemy: Enemy, isWasp: Boolean) {
+    val center = Offset(enemy.position.x, enemy.position.y)
+    val r = enemy.radius
+    val flap = wingFlap(enemy.elapsedSeconds, enemy.formationIndex)
+    val wingAlpha = 0.34f + flap * 0.42f
+    val bodyColor = if (isWasp) Color(0xFFFFC107) else Color(0xFFFFD54F)
+    val stripeColor = if (isWasp) Color(0xFF212121) else Color(0xFF4E342E)
+    val eyeColor = if (isWasp) Color(0xFFE53935) else Color(0xFF263238)
+
+    drawOval(
+        color = Color.White.copy(alpha = wingAlpha),
+        topLeft = Offset(center.x - r * 1.35f, center.y - r * (0.98f + flap * 0.24f)),
+        size = Size(r * 1.35f, r * (0.68f + flap * 0.5f)),
+    )
+    drawOval(
+        color = Color.White.copy(alpha = wingAlpha),
+        topLeft = Offset(center.x, center.y - r * (0.98f + (1f - flap) * 0.24f)),
+        size = Size(r * 1.35f, r * (0.68f + (1f - flap) * 0.5f)),
+    )
+    drawOval(
+        color = bodyColor,
+        topLeft = Offset(center.x - r * 0.34f, center.y - r * 0.55f),
+        size = Size(r * 0.68f, r * 1.3f),
+    )
+    repeat(4) { index ->
+        val stripeY = center.y - r * 0.34f + index * r * 0.28f
+        drawLine(
+            color = stripeColor,
+            start = Offset(center.x - r * 0.28f, stripeY),
+            end = Offset(center.x + r * 0.28f, stripeY + r * 0.06f),
+            strokeWidth = r * 0.1f,
+            cap = StrokeCap.Round,
+        )
+    }
+    drawCircle(
+        color = stripeColor,
+        radius = r * 0.32f,
+        center = Offset(center.x, center.y - r * 0.62f),
+    )
+    drawCircle(eyeColor, r * 0.09f, Offset(center.x - r * 0.11f, center.y - r * 0.66f))
+    drawCircle(eyeColor, r * 0.09f, Offset(center.x + r * 0.11f, center.y - r * 0.66f))
+    drawLine(
+        color = Color(0xFFFF7043),
+        start = Offset(center.x, center.y + r * 0.72f),
+        end = Offset(center.x, center.y + r * 1.05f),
+        strokeWidth = r * 0.08f,
+        cap = StrokeCap.Round,
+    )
+    repeat(3) { legIndex ->
+        val y = center.y - r * 0.1f + legIndex * r * 0.25f
+        drawLine(Color(0xFF6D4C41), Offset(center.x - r * 0.24f, y), Offset(center.x - r * 0.86f, y + r * 0.18f), r * 0.06f, cap = StrokeCap.Round)
+        drawLine(Color(0xFF6D4C41), Offset(center.x + r * 0.24f, y), Offset(center.x + r * 0.86f, y + r * 0.18f), r * 0.06f, cap = StrokeCap.Round)
+    }
+}
+
+private fun DrawScope.drawButterfly(enemy: Enemy, isSwallowtail: Boolean) {
+    val center = Offset(enemy.position.x, enemy.position.y)
+    val r = enemy.radius
+    val flap = wingFlap(enemy.elapsedSeconds, enemy.formationIndex)
+    val wingLift = r * (0.12f + flap * 0.28f)
+    val topColor = if (isSwallowtail) Color(0xFFFFB74D) else Color(0xFFF5F5F5)
+    val bottomColor = if (isSwallowtail) Color(0xFFFF7043) else Color(0xFFE3F2FD)
+    val lineColor = if (isSwallowtail) Color(0xFF212121) else Color(0xFF90CAF9)
+    val leftTop = Path().apply {
+        moveTo(center.x - r * 0.08f, center.y - r * 0.35f)
+        cubicTo(center.x - r * 1.35f, center.y - r * 1.35f - wingLift, center.x - r * 1.65f, center.y - r * 0.1f, center.x - r * 0.35f, center.y + r * 0.1f)
+        close()
+    }
+    val rightTop = Path().apply {
+        moveTo(center.x + r * 0.08f, center.y - r * 0.35f)
+        cubicTo(center.x + r * 1.35f, center.y - r * 1.35f - wingLift, center.x + r * 1.65f, center.y - r * 0.1f, center.x + r * 0.35f, center.y + r * 0.1f)
+        close()
+    }
+    val leftBottom = Path().apply {
+        moveTo(center.x - r * 0.1f, center.y + r * 0.05f)
+        cubicTo(center.x - r * 1.2f, center.y + r * 0.15f, center.x - r * 1.05f, center.y + r * 1.2f + wingLift, center.x - r * 0.25f, center.y + r * 0.55f)
+        close()
+    }
+    val rightBottom = Path().apply {
+        moveTo(center.x + r * 0.1f, center.y + r * 0.05f)
+        cubicTo(center.x + r * 1.2f, center.y + r * 0.15f, center.x + r * 1.05f, center.y + r * 1.2f + wingLift, center.x + r * 0.25f, center.y + r * 0.55f)
+        close()
+    }
+    drawPath(leftTop, topColor.copy(alpha = 0.84f))
+    drawPath(rightTop, topColor.copy(alpha = 0.84f))
+    drawPath(leftBottom, bottomColor.copy(alpha = 0.8f))
+    drawPath(rightBottom, bottomColor.copy(alpha = 0.8f))
+    drawOval(
+        color = Color(0xFF3E2723),
+        topLeft = Offset(center.x - r * 0.16f, center.y - r * 0.65f),
+        size = Size(r * 0.32f, r * 1.35f),
+    )
+    drawLine(lineColor, Offset(center.x - r * 0.85f, center.y - r * 0.45f), Offset(center.x - r * 0.25f, center.y - r * 0.08f), r * 0.06f)
+    drawLine(lineColor, Offset(center.x + r * 0.85f, center.y - r * 0.45f), Offset(center.x + r * 0.25f, center.y - r * 0.08f), r * 0.06f)
+    if (isSwallowtail) {
+        drawCircle(Color(0xFF212121), r * 0.12f, Offset(center.x - r * 0.72f, center.y + r * 0.12f))
+        drawCircle(Color(0xFF212121), r * 0.12f, Offset(center.x + r * 0.72f, center.y + r * 0.12f))
+    }
+}
+
+private fun DrawScope.drawStagBeetle(enemy: Enemy) {
+    val center = Offset(enemy.position.x, enemy.position.y)
+    val r = enemy.radius
+    val sway = sin(enemy.elapsedSeconds * 8f + enemy.formationIndex) * r * 0.08f
+    drawOval(
+        color = Color(0xFF4E342E),
+        topLeft = Offset(center.x - r * 0.48f, center.y - r * 0.48f + sway),
+        size = Size(r * 0.96f, r * 1.15f),
+    )
+    drawCircle(
+        color = Color(0xFF3E2723),
+        radius = r * 0.34f,
+        center = Offset(center.x, center.y - r * 0.62f + sway),
+    )
+    drawLine(Color(0xFFD7CCC8), Offset(center.x - r * 0.18f, center.y - r * 0.82f), Offset(center.x - r * 0.75f, center.y - r * 1.25f), r * 0.12f, cap = StrokeCap.Round)
+    drawLine(Color(0xFFD7CCC8), Offset(center.x + r * 0.18f, center.y - r * 0.82f), Offset(center.x + r * 0.75f, center.y - r * 1.25f), r * 0.12f, cap = StrokeCap.Round)
+    drawLine(Color(0xFFD7CCC8), Offset(center.x - r * 0.75f, center.y - r * 1.25f), Offset(center.x - r * 0.55f, center.y - r * 0.9f), r * 0.08f, cap = StrokeCap.Round)
+    drawLine(Color(0xFFD7CCC8), Offset(center.x + r * 0.75f, center.y - r * 1.25f), Offset(center.x + r * 0.55f, center.y - r * 0.9f), r * 0.08f, cap = StrokeCap.Round)
+    repeat(3) { index ->
+        val y = center.y - r * 0.2f + index * r * 0.28f
+        drawLine(Color(0xFFBCAAA4), Offset(center.x - r * 0.34f, y), Offset(center.x - r * 0.9f, y + r * 0.18f), r * 0.07f, cap = StrokeCap.Round)
+        drawLine(Color(0xFFBCAAA4), Offset(center.x + r * 0.34f, y), Offset(center.x + r * 0.9f, y + r * 0.18f), r * 0.07f, cap = StrokeCap.Round)
+    }
+}
+
 private fun DrawScope.drawBossMosquito(boss: BossMosquito) {
+    val bodyBob = sin(boss.elapsedSeconds * 6f) * boss.radius * 0.05f
     val proxy = object : Enemy {
         override val id = boss.id
         override val enemyKind = boss.enemyKind
@@ -444,11 +662,16 @@ private fun DrawScope.drawBossMosquito(boss: BossMosquito) {
         override val formationIndex = 0
         override val elapsedSeconds = boss.elapsedSeconds
         override val basePosition = boss.basePosition
-        override val position = boss.position
+        override val position = boss.position.copy(y = boss.position.y + bodyBob)
         override val radius = boss.radius
         override val speed = 0f
         override fun update(deltaSeconds: Float): Enemy = this
     }
+    drawCircle(
+        color = Color(0xFFFFD54F).copy(alpha = 0.12f + wingFlap(boss.elapsedSeconds, 0) * 0.12f),
+        radius = boss.radius * 1.55f,
+        center = Offset(boss.position.x, boss.position.y),
+    )
     drawMosquito(proxy)
     drawCircle(
         color = Color(0xFFFFD54F).copy(alpha = 0.25f),
@@ -458,11 +681,21 @@ private fun DrawScope.drawBossMosquito(boss: BossMosquito) {
     )
 }
 
+private fun wingFlap(elapsedSeconds: Float, index: Int): Float {
+    return ((sin(elapsedSeconds * 22f + index * 0.7f) + 1f) / 2f).coerceIn(0f, 1f)
+}
+
+private fun DrawScope.drawBossHpBars(bosses: List<BossMosquito>) {
+    bosses.forEach { boss ->
+        drawBossHpBar(boss)
+    }
+}
+
 private fun DrawScope.drawBossHpBar(boss: BossMosquito) {
-    val barWidth = size.width * 0.62f
-    val barHeight = 8f
-    val left = (size.width - barWidth) / 2f
-    val top = 82f
+    val barWidth = (boss.radius * 2.15f).coerceIn(size.width * 0.18f, size.width * 0.42f)
+    val barHeight = (boss.radius * 0.14f).coerceIn(6f, 12f)
+    val left = (boss.position.x - barWidth / 2f).coerceIn(8f, size.width - barWidth - 8f)
+    val top = (boss.position.y - boss.radius * 1.55f).coerceAtLeast(76f)
     val progress = boss.hp.toFloat() / boss.maxHp.toFloat()
     drawRect(
         color = Color.White.copy(alpha = 0.22f),
@@ -491,11 +724,12 @@ private fun DrawScope.drawEnemyBullet(bullet: EnemyBullet) {
 
 private fun DrawScope.drawPowerUp(powerUp: PowerUp) {
     val color = when (powerUp.type) {
-        PowerUpType.DOUBLE_SHOT -> Color(0xFF42A5F5)
-        PowerUpType.RAPID_FIRE -> Color(0xFFFFCA28)
-        PowerUpType.SHIELD -> Color(0xFF66BB6A)
-        PowerUpType.HEAL -> Color(0xFFEC407A)
-        PowerUpType.BOMB -> Color(0xFFAB47BC)
+        PowerUpType.SPEED_2 -> Color(0xFFFFCA28)
+        PowerUpType.SPEED_4 -> Color(0xFFE53935)
+        PowerUpType.DOUBLE_SHOT -> Color(0xFF66BB6A)
+        PowerUpType.TRIPLE_SHOT -> Color(0xFFFF5CA8)
+        PowerUpType.SHIELD_1 -> Color(0xFF42A5F5)
+        PowerUpType.SHIELD_2 -> Color(0xFFAB47BC)
     }
     drawCircle(
         color = color,
