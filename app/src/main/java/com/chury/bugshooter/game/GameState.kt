@@ -1,0 +1,41 @@
+package com.chury.bugshooter.game
+
+import com.chury.bugshooter.engine.GameConfig
+import com.chury.bugshooter.engine.Vector2
+
+data class GameState(
+    val screenSize: Vector2 = Vector2.Zero,
+    val player: Player = Player(Vector2.Zero, Vector2.Zero),
+    val bullets: List<Bullet> = emptyList(),
+    val enemies: List<Enemy> = emptyList(),
+    val enemyBullets: List<EnemyBullet> = emptyList(),
+    val powerUps: List<PowerUp> = emptyList(),
+    val explosions: List<Explosion> = emptyList(),
+    val bosses: List<BossMosquito> = emptyList(),
+    val score: Int = 0,
+    val lives: Int = GameConfig.InitialLives,
+    val hits: Int = 0,
+    val misses: Int = 0,
+    val combo: Int = 0,
+    val comboTimerSeconds: Float = 0f,
+    val doubleShotSeconds: Float = 0f,
+    val tripleShotSeconds: Float = 0f,
+    val rapidFireSeconds: Float = 0f,
+    val bulletSpeedMultiplier: Float = 1f,
+    val shieldCharges: Int = 0,
+    val isTouching: Boolean = false,
+    val fireCooldownSeconds: Float = 0f,
+    val spawnTimerSeconds: Float = 0f,
+    val enemyFireTimerSeconds: Float = 0f,
+    val bossFireTimerSeconds: Float = 0f,
+    val bossPowerUpTimerSeconds: Float = 0f,
+    val playerHitFlashSeconds: Float = 0f,
+    val currentGroupId: Int? = null,
+    val currentPatternName: String = "NONE",
+    val currentStage: Int = 1,
+    val difficultyLevel: Int = 1,
+    val normalGroupsSinceBoss: Int = 0,
+    val carryOverEnemies: Int = 0,
+    val currentGroupHadMiss: Boolean = false,
+    val isGameOver: Boolean = false,
+)
