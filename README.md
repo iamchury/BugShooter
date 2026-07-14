@@ -1,4 +1,4 @@
-## BugShooter v1.0.0
+## BugShooter v1.0
 
 First playable release.
 
